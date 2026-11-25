@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# Resultados generados: se conservan las carpetas, no su contenido.
+output/**
+!output/
+!output/*/
+!output/**/.gitkeep
+output_mock/

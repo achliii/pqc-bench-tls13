@@ -1,0 +1,38 @@
+name: pqc-bench
+
+services:
+  pqc-server:
+    build: ./server
+    image: pqc-bench/server:1.0
+    container_name: pqc-server
+    ulimits:
+      nofile: { soft: 65536, hard: 65536 }
+    networks:
+      pqc_bench_net:
+        ipv4_address: 172.28.0.10
+
+  pqc-client-orchestrator:
+    build: ./client
+    image: pqc-bench/client:1.0
+    container_name: pqc-client-orchestrator
+    cap_add:
+      - NET_ADMIN            # requerido por tc netem / ip link (network_shaper.py)
+    depends_on:
+      - pqc-server
+    environment:
+      PQC_SERVER_HOST: pqc-server
+      HOST_UID: ${HOST_UID:-0}   # para devolver la propiedad de ./output al usuario del host
+      HOST_GID: ${HOST_GID:-0}
+    volumes:
+      - ./:/app
+    networks:
+      pqc_bench_net:
+        ipv4_address: 172.28.0.20
+
+networks:
+  pqc_bench_net:
+    name: pqc_bench_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

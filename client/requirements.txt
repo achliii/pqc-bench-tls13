@@ -1,0 +1,4 @@
+# Solo para analytics_plotter.py; load_runner.py y network_shaper.py usan la biblioteca estándar.
+numpy==2.3.4
+pandas==2.3.3
+matplotlib==3.10.7

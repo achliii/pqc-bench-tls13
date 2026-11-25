@@ -1,0 +1,119 @@
+# PQC-Bench TLS 1.3
+
+Banco de pruebas en contenedores que mide la penalización de latencia de *handshake*, la fragmentación TCP y la tasa de éxito de **TLS 1.3 híbrido postcuántico (X25519MLKEM768)** frente a **TLS 1.3 clásico (X25519)**, con **100 usuarios concurrentes** y bajo 4 escenarios de red degradada (8 experimentos, `EXP_01`–`EXP_08`).
+
+Implementa la Sección 3 (Metodología) del artículo *"Evaluación empírica del rendimiento y resiliencia del intercambio de claves híbrido postcuántico en TLS 1.3 bajo condiciones de carga concurrente y red degradada"* y los contratos `01_network_scenarios_contract.md` y `02_telemetry_output_contract.md`.
+
+## Arquitectura
+
+```
+docker compose (red bridge pqc_bench_net, 172.28.0.0/16)
+├── pqc-server (172.28.0.10)            openquantumsafe/nginx: nginx 1.28 + OpenSSL 3.4 + oqs-provider
+│   ├── :4433  TLS 1.3 solo X25519
+│   └── :4434  TLS 1.3 solo X25519MLKEM768
+└── pqc-client-orchestrator (172.28.0.20, NET_ADMIN)   Python 3.13 + OpenSSL 3.5
+    ├── bench/network_shaper.py    tc netem + MTU sobre eth0  -> output/network_state.json
+    ├── bench/load_runner.py       100 hilos x 5 iteraciones  -> output/raw/, output/manifests/
+    ├── bench/run_experiments.py   orquesta EXP_01..EXP_08 (shaper -> runner)
+    └── bench/analytics_plotter.py figuras 300 dpi + tabla   -> output/figures/
+```
+
+| Archivo | Qué contiene |
+|---|---|
+| `config/scenarios_config.json` | Matriz oficial de los 8 experimentos y los parámetros de red de cada escenario |
+| `bench/config.py` | Parámetros globales (100 usuarios, 5 iteraciones, warm-up 10, timeout 3000 ms) y validación de la matriz |
+| `server/` | Imagen del servidor: `nginx.conf` (un grupo por puerto, sin reanudación), `openssl-bench.cnf`, certificado ECDSA P-256 |
+| `client/` | Imagen del cliente/orquestador (iproute2, ethtool, openssl, pandas, matplotlib) |
+| `bench/mock_telemetry.py` | Datos simulados para desarrollar el graficador sin Docker |
+| `tests/` | Pruebas unitarias (pytest) |
+
+## Requisitos
+
+- Docker y Docker Compose v2 (Linux, o Docker Desktop con WSL2 en Windows).
+- Para correr las pruebas y los datos simulados en el host: Python ≥ 3.11 con `pytest`, `pandas`, `matplotlib`, `numpy` (o usar `make test-docker`).
+
+## Cómo ejecutarlo
+
+### 1. Levantar el entorno
+
+```bash
+make up
+```
+
+(equivale a `docker compose up -d --build`). Comprobación rápida de ambos puertos:
+
+```bash
+docker compose exec pqc-client-orchestrator sh -c 'printf "GET / HTTP/1.0\r\n\r\n" | openssl s_client -connect pqc-server:4434 -groups X25519MLKEM768 -ign_eof 2>&1 | grep -E "group|PQC-Bench"'
+```
+
+Debe mostrar `Negotiated TLS1.3 group: X25519MLKEM768`.
+
+### 2. Campaña completa (8 experimentos + figuras)
+
+```bash
+make bench
+```
+
+Tarda ~2 minutos. Al terminar, la red del contenedor queda restaurada (sin netem, MTU 1500) y los archivos de `output/` pertenecen a tu usuario.
+
+### 3. Un experimento suelto (flujo del contrato 01, paso a paso)
+
+```bash
+docker compose exec pqc-client-orchestrator python bench/network_shaper.py --exp EXP_04
+```
+
+```bash
+docker compose exec pqc-client-orchestrator python bench/load_runner.py --exp EXP_04
+```
+
+`network_shaper.py --dry-run` imprime los comandos `tc`/`ip` sin ejecutarlos; `--reset` restaura la red. También existe `make exp EXP=EXP_04`.
+
+### 4. Regenerar figuras y tabla
+
+```bash
+make plots
+```
+
+### 5. Pruebas sin Docker (datos simulados)
+
+```bash
+make mock
+```
+
+Escribe en `output_mock/` y genera las figuras con la marca de agua **DATOS SIMULADOS** (los números del mock vienen del contrato 02 y **no** deben usarse en el artículo).
+
+```bash
+make test
+```
+
+## Salidas
+
+| Ruta | Contenido |
+|---|---|
+| `output/network_state.json` | Estado verificado del kernel (`shaper_status`: `READY`, `INVALID_ENV` o `RESET`) |
+| `output/raw/EXP_XX_raw.csv` | 500 filas por experimento (5 iteraciones × 100 hilos) |
+| `output/manifests/EXP_XX_manifest.json` | Estadísticos (media, desviación, p50, p95, p99), tasa de fallos, volumen del handshake, validación previa, versiones |
+| `output/logs/EXP_XX_invalid_env.json` | Motivo del aborto cuando la corrida es `INVALID_ENV` |
+| `output/figures/fig1_latency_comparison_bar.png` | p50/p95 clásico vs. híbrido por escenario, con ΔL(p50) |
+| `output/figures/fig2_mtu_fragmentation_impact.png` | (a) segmentos TCP por handshake con MTU 1500 vs 1280; (b) distribución de latencia con MTU 1280 |
+| `output/figures/fig3_failure_rate_hostile.png` | Tasa de fallos (TIMEOUT / TCP_RESET) por escenario |
+| `output/figures/summary_table_ieee.csv` | Tabla para el artículo: p50, p95, ΔL, R_éxito, bytes y segmentos |
+
+El CSV crudo conserva las 8 columnas del contrato en el mismo orden y añade al final `tcp_connect_ms`, `tls_bytes_sent`, `tls_bytes_received`, `tcp_retransmissions` y `error_detail`, que alimentan la métrica de volumen del handshake (Sección 3.4).
+
+## Decisiones de implementación
+
+- **Medición.** `handshake_time_ms` mide solo la negociación TLS (del ClientHello al Finished del servidor), con `perf_counter_ns`. El saludo TCP va aparte en `tcp_connect_ms`. El timeout de 3000 ms cubre ambos, así que un SYN perdido también cuenta. Los 100 hilos arrancan a la vez con una barrera. Los segmentos y bytes salen de `TCP_INFO` del kernel en cada conexión, no de estimaciones.
+- **Latencia y pérdida.** El retardo se aplica solo a la salida del cliente, así que el RTT añadido es igual a `delay_ms`; OSIPTEL también reporta la latencia como ida y vuelta. La pérdida se aplica **en ambos sentidos** (`ifb0` para la bajada), porque los segmentos del servidor también deben poder perderse. Esto se configura con `loss_direction` (`"both"` o `"egress"`) en `scenarios_config.json`. TSO, GSO y GRO se desactivan para que netem descarte segmentos individuales.
+- **Un grupo por proceso.** OpenSSL 3.5 envía por defecto key shares de X25519MLKEM768 **y** X25519, lo que inflaría el ClientHello clásico (1536 B en lugar de 302 B). El módulo `ssl` de Python 3.13 no permite elegir el grupo, así que `load_runner.py` se relanza con un `OPENSSL_CONF` que fija `Groups = X25519` o `Groups = X25519MLKEM768`.
+- **Validación temprana (fail-fast).** Antes de lanzar los hilos, `load_runner.py` verifica:
+  1. que `network_state.json` esté en `READY` y corresponda al escenario;
+  2. que el puerto responda;
+  3. que haya un handshake de prueba correcto;
+  4. que un handshake contra el puerto del **otro** protocolo falle, lo que prueba que el cliente ofrece un solo grupo;
+  5. con `openssl s_client`, cuál es el grupo negociado y que el servidor no envíe Session Tickets.
+
+  Si algo falla, la corrida termina como `INVALID_ENV` con código de salida 2, sin escribir CSV ni manifiesto, y la campaña se detiene.
+- **Sin reanudación.** Se usa `ssl_session_tickets off` y `ssl_session_cache off`. Además, `NumTickets = 0` en `server/openssl-bench.cnf`, porque nginx seguía enviando NewSessionTicket en TLS 1.3 aunque los tickets estuvieran en `off`. Del lado del cliente se usa `OP_NO_TICKET`.
+- **Autenticación constante.** El servidor usa un certificado ECDSA P-256 propio en ambos puertos. El certificado que trae la imagen OQS es postcuántico (~7.5 KB) y habría dominado el volumen del handshake.
+- **Imágenes fijadas por digest** en los `Dockerfile` para que la campaña sea reproducible.

@@ -1,0 +1,22 @@
+{
+  "project_name": "PQC_BENCH_TLS13_V1",
+  "server_host": "pqc-server",
+  "interface": "eth0",
+  "loss_direction": "both",
+  "scenarios": {
+    "SCN_01_LAN_IDEAL":      {"delay_ms": 0,   "loss_pct": 0.0, "mtu_bytes": 1500, "description": "Línea base / LAN ideal"},
+    "SCN_02_4G_TYPICAL":     {"delay_ms": 50,  "loss_pct": 1.0, "mtu_bytes": 1500, "description": "4G típico (Perú, OSIPTEL 2026-I)"},
+    "SCN_03_MOBILE_HOSTILE": {"delay_ms": 150, "loss_pct": 5.0, "mtu_bytes": 1500, "description": "Red móvil hostil"},
+    "SCN_04_MTU_RESTRICTED": {"delay_ms": 50,  "loss_pct": 0.0, "mtu_bytes": 1280, "description": "MTU restringido (VPN/IPsec)"}
+  },
+  "experiments": [
+    {"experiment_id": "EXP_01", "scenario_id": "SCN_01_LAN_IDEAL",      "protocol_mode": "CLASSIC",    "cipher_group": "x25519",          "port": 4433},
+    {"experiment_id": "EXP_02", "scenario_id": "SCN_01_LAN_IDEAL",      "protocol_mode": "PQC_HYBRID", "cipher_group": "x25519_mlkem768", "port": 4434},
+    {"experiment_id": "EXP_03", "scenario_id": "SCN_02_4G_TYPICAL",     "protocol_mode": "CLASSIC",    "cipher_group": "x25519",          "port": 4433},
+    {"experiment_id": "EXP_04", "scenario_id": "SCN_02_4G_TYPICAL",     "protocol_mode": "PQC_HYBRID", "cipher_group": "x25519_mlkem768", "port": 4434},
+    {"experiment_id": "EXP_05", "scenario_id": "SCN_03_MOBILE_HOSTILE", "protocol_mode": "CLASSIC",    "cipher_group": "x25519",          "port": 4433},
+    {"experiment_id": "EXP_06", "scenario_id": "SCN_03_MOBILE_HOSTILE", "protocol_mode": "PQC_HYBRID", "cipher_group": "x25519_mlkem768", "port": 4434},
+    {"experiment_id": "EXP_07", "scenario_id": "SCN_04_MTU_RESTRICTED", "protocol_mode": "CLASSIC",    "cipher_group": "x25519",          "port": 4433},
+    {"experiment_id": "EXP_08", "scenario_id": "SCN_04_MTU_RESTRICTED", "protocol_mode": "PQC_HYBRID", "cipher_group": "x25519_mlkem768", "port": 4434}
+  ]
+}
