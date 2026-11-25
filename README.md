@@ -102,6 +102,38 @@ make test
 
 El CSV crudo conserva las 8 columnas del contrato en el mismo orden y añade al final `tcp_connect_ms`, `tls_bytes_sent`, `tls_bytes_received`, `tcp_retransmissions` y `error_detail`, que alimentan la métrica de volumen del handshake (Sección 3.4).
 
+## Resultados explicados de forma sencilla
+
+> Datos del 25/11/2026 con el servidor en OpenSSL 3.5.9, medidos en una laptop (8 núcleos, 7 GB de RAM). La campaña se corrió **dos veces seguidas** para comprobar que los resultados se repiten. La tabla muestra la primera, que es la que está en `output/`.
+
+**La idea en una frase:** el cifrado postcuántico (híbrido) protege contra futuras computadoras cuánticas a cambio de mandar unas 3 veces más datos al conectarse. En la práctica la diferencia de tiempo es pequeña. Solo se nota con claridad en una red perfecta, donde lo único que pesa es el cálculo.
+
+Cada vez que abres una página segura (con candado), tu dispositivo y el servidor primero se saludan y acuerdan una clave secreta. Ese saludo se llama *handshake*. Medimos cuánto tarda con el método actual (**clásico**) y con el nuevo (**híbrido**), con 100 personas conectándose al mismo tiempo y en cuatro tipos de red.
+
+| Tipo de red | Clásico | Híbrido | ¿Cuánto más lento es el híbrido? | Al repetir la prueba | Conexiones que fallaron (de 500) |
+|---|---|---|---|---|---|
+| Red perfecta (como un cable en casa) | 39 ms | 64 ms | 63 % más (25 ms) | 31 % más | Ninguna |
+| 4G normal en Perú | 98 ms | 100 ms | 2 % más (2 ms) | 17 % más | Ninguna |
+| Red móvil mala (mucho retraso, se pierden paquetes) | 176 ms | 187 ms | 6 % más (11 ms) | 2 % más | 0 clásico, 1 híbrido (en la repetición: 3 y 2) |
+| Red con VPN (paquetes más pequeños) | 102 ms | 108 ms | 6 % más (6 ms) | 17 % más | Ninguna |
+
+*ms = milisegundos (milésimas de segundo). Los tiempos son los del usuario típico (la mediana, p50).*
+
+**Qué significa cada fila:**
+
+- **Red perfecta.** Es donde el híbrido sale más lento en porcentaje (entre 31 % y 63 % según la prueba), porque aquí no hay red que esperar y solo se nota el trabajo extra del procesador. Aun así son unas 12 a 25 milésimas de segundo, algo que una persona no percibe.
+- **4G normal.** Cuando aparece el retraso normal de la red, ese retraso pesa más que el cálculo extra. La diferencia queda entre 2 % y 17 %, es decir, entre 2 y 15 milésimas de segundo.
+- **Red móvil mala.** Esperábamos que el híbrido sufriera más aquí, porque manda más datos y hay más que perder. No pasó: ambos tardan casi lo mismo (entre 2 % y 6 % de diferencia). Los usuarios con peor suerte (el 5 % más lento, p95) esperan unos 0.67 segundos con cualquiera de los dos. Los pocos fallos aparecieron en ambos métodos por igual. Lo que retrasa la conexión es la mala red, no el tipo de cifrado.
+- **Red con VPN.** Con paquetes más pequeños, el saludo híbrido se parte en más pedazos (11 en lugar de 8). Eso le cuesta entre 6 y 16 milésimas de segundo más, poco, porque los pedazos viajan juntos sin esperar turnos adicionales.
+
+**¿Por qué cambian los números entre una prueba y otra?** Los 100 usuarios simulados y el servidor funcionan en la misma laptop, así que compiten por el mismo procesador. Esa espera interna es la razón de que un saludo en 4G tarde unos 100 ms aunque la red solo agregue 50 ms, y de que los porcentajes cambien entre repeticiones. Lo que **sí se repite siempre** es el patrón: la mayor diferencia aparece en la red perfecta, y en las redes malas ambos métodos se comportan casi igual.
+
+**¿Por qué el híbrido es más "pesado"?** El saludo clásico intercambia unos **1 090 bytes** y el híbrido unos **3 350 bytes**, unas 3 veces más. Es como mandar una carta de 3 hojas en lugar de 1. En una red buena casi no se nota, pero ocupa más espacio.
+
+**Conclusión práctica:** adoptar hoy el cifrado híbrido postcuántico tiene un costo pequeño para el usuario, incluso en redes móviles peruanas. El retraso y las pérdidas de la red pesan bastante más que el cambio de cifrado.
+
+Las figuras de `output/figures/` muestran estos mismos números en gráficos: `fig1` compara los tiempos, `fig2` los pedazos con MTU normal y con VPN, y `fig3` las conexiones fallidas.
+
 ## Decisiones de implementación
 
 - **Medición.** `handshake_time_ms` mide solo la negociación TLS (del ClientHello al Finished del servidor), con `perf_counter_ns`. El saludo TCP va aparte en `tcp_connect_ms`. El timeout de 3000 ms cubre ambos, así que un SYN perdido también cuenta. Los 100 hilos arrancan a la vez con una barrera. Los segmentos y bytes salen de `TCP_INFO` del kernel en cada conexión, no de estimaciones.
