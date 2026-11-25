@@ -8,10 +8,10 @@ Implementa la Sección 3 (Metodología) del artículo *"Evaluación empírica de
 
 ```
 docker compose (red bridge pqc_bench_net, 172.28.0.0/16)
-├── pqc-server (172.28.0.10)            openquantumsafe/nginx: nginx 1.28 + OpenSSL 3.4 + oqs-provider
+├── pqc-server (172.28.0.10)            receta OQS: nginx 1.28 + OpenSSL 3.5.9 + liboqs 0.16 + oqs-provider 0.12
 │   ├── :4433  TLS 1.3 solo X25519
 │   └── :4434  TLS 1.3 solo X25519MLKEM768
-└── pqc-client-orchestrator (172.28.0.20, NET_ADMIN)   Python 3.13 + OpenSSL 3.5
+└── pqc-client-orchestrator (172.28.0.20, NET_ADMIN)   Python 3.13 + OpenSSL 3.5.9
     ├── bench/network_shaper.py    tc netem + MTU sobre eth0  -> output/network_state.json
     ├── bench/load_runner.py       100 hilos x 5 iteraciones  -> output/raw/, output/manifests/
     ├── bench/run_experiments.py   orquesta EXP_01..EXP_08 (shaper -> runner)
@@ -22,7 +22,7 @@ docker compose (red bridge pqc_bench_net, 172.28.0.0/16)
 |---|---|
 | `config/scenarios_config.json` | Matriz oficial de los 8 experimentos y los parámetros de red de cada escenario |
 | `bench/config.py` | Parámetros globales (100 usuarios, 5 iteraciones, warm-up 10, timeout 3000 ms) y validación de la matriz |
-| `server/` | Imagen del servidor: `nginx.conf` (un grupo por puerto, sin reanudación), `openssl-bench.cnf`, certificado ECDSA P-256 |
+| `server/` | Imagen del servidor compilada desde código fuente (receta oficial de Open Quantum Safe con OpenSSL 3.5): `nginx.conf` (un grupo por puerto, sin reanudación), `openssl-bench.cnf`, certificado ECDSA P-256 |
 | `client/` | Imagen del cliente/orquestador (iproute2, ethtool, openssl, pandas, matplotlib) |
 | `bench/mock_telemetry.py` | Datos simulados para desarrollar el graficador sin Docker |
 | `tests/` | Pruebas unitarias (pytest) |
@@ -30,6 +30,7 @@ docker compose (red bridge pqc_bench_net, 172.28.0.0/16)
 ## Requisitos
 
 - Docker y Docker Compose v2 (Linux, o Docker Desktop con WSL2 en Windows).
+- Conexión a Internet la primera vez: la imagen del servidor descarga y compila OpenSSL, liboqs, oqs-provider y nginx (unos 10–15 minutos; después queda en caché).
 - Para correr las pruebas y los datos simulados en el host: Python ≥ 3.11 con `pytest`, `pandas`, `matplotlib`, `numpy` (o usar `make test-docker`).
 
 ## Cómo ejecutarlo
