@@ -148,5 +148,8 @@ Las figuras de `output/figures/` muestran estos mismos números en gráficos: `f
 
   Si algo falla, la corrida termina como `INVALID_ENV` con código de salida 2, sin escribir CSV ni manifiesto, y la campaña se detiene.
 - **Sin reanudación.** Se usa `ssl_session_tickets off` y `ssl_session_cache off`. Además, `NumTickets = 0` en `server/openssl-bench.cnf`, porque nginx seguía enviando NewSessionTicket en TLS 1.3 aunque los tickets estuvieran en `off`. Del lado del cliente se usa `OP_NO_TICKET`.
-- **Autenticación constante.** El servidor usa un certificado ECDSA P-256 propio en ambos puertos. El certificado que trae la imagen OQS es postcuántico (~7.5 KB) y habría dominado el volumen del handshake.
-- **Imágenes fijadas por digest** en los `Dockerfile` para que la campaña sea reproducible.
+- **Servidor con OpenSSL 3.5.** La imagen publicada `openquantumsafe/nginx` trae OpenSSL 3.4. Por eso `server/Dockerfile` reproduce la receta oficial de Open Quantum Safe (`oqs-demos/nginx`) compilando nginx 1.28.0 con **OpenSSL 3.5.9**, **liboqs 0.16.0** y **oqs-provider 0.12.0**. Así servidor y cliente usan la misma versión de OpenSSL.
+  - Ambos proveedores (`default` y `oqsprovider`) están activos. Con `config_diagnostics = 1`, si oqs-provider no carga, el servidor no arranca.
+  - oqs-provider 0.12 ya no incluye su propia versión de X25519MLKEM768 cuando corre sobre OpenSSL 3.5, así que el grupo híbrido evaluado lo implementa OpenSSL de forma nativa (FIPS 203). Se comprueba con `openssl list -kem-algorithms`, que muestra `X25519MLKEM768 @ default`. oqs-provider aporta los demás algoritmos de liboqs.
+- **Autenticación constante.** El servidor usa un certificado ECDSA P-256 propio en ambos puertos. La receta OQS genera por defecto un certificado ML-DSA (~7.5 KB) que habría dominado el volumen del handshake.
+- **Versiones fijadas** (imágenes base por digest y etiquetas exactas de OpenSSL, liboqs, oqs-provider y nginx) para que la campaña sea reproducible.
